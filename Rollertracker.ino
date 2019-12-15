@@ -7,6 +7,7 @@
 #include "CachedScan.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <MicroNMEA.h>
 #include "config.h"
 
 CachedScan scan;
@@ -45,12 +46,44 @@ const char* rootCACertificate = \
 "rUCGwbCUDI0mxadJ3Bz4WxR6fyNpBK2yAinWEsikxqEt\n" \
 "-----END CERTIFICATE-----\n";
 
+HardwareSerial& gps = Serial2;
+char nmeaBuffer[512];
+MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
+
+void processGPSData(void *) {
+  while(true) {
+    while (gps.available()) {
+      char c = gps.read();
+      nmea.process(c);
+    }
+    delay(1);
+  }
+}
 
 void setup()
 {
-    Serial.begin(115200);
+  Serial.begin(115200);
+  gps.begin(9600); // gps
+  // Clear the list of messages which are sent.
+  MicroNMEA::sendSentence(gps, "$PORZB");
 
-    Serial.println("Setup done");
+  // Send only RMC and GGA messages.
+  MicroNMEA::sendSentence(gps, "$PORZB,RMC,1,GGA,1");
+
+  // Disable compatability mode (NV08C-CSM proprietary message) and
+  // adjust precision of time and position fields
+  MicroNMEA::sendSentence(gps, "$PNVGNME,2,9,1");
+  // MicroNMEA::sendSentence(gps, "$PONME,2,4,1,0");
+
+  xTaskCreatePinnedToCore( processGPSData, /* Task function. */
+                           "GPSProcessing",  /* String with name of task. */
+                           10000,            /* Stack size in words. */
+                           NULL,             /* Parameter passed as input of the task */
+                           1,                /* Priority of the task. */
+                           NULL,             /* Task handle. */
+                           1);               /*core id*/
+
+  Serial.println("Setup done");
 }
 
 void loop()
@@ -60,6 +93,7 @@ void loop()
   Serial.println("Starting a new scan");
   scan.scanAndCache();
   sJSONStations=scan.serializeToJSON();
+  Serial.println(sJSONStations);
 
   Serial.print("Waiting for WiFi to connect again ...");
   scan.connectToSomeStation(30);
@@ -80,7 +114,24 @@ void loop()
     client -> setCACert(rootCACertificate);
     {
       HTTPClient https;
-      if (https.begin(*client, LOCATE_URL)) {
+      String sURL=LOCATE_URL;
+
+      if(nmea.isValid()) {
+        long lLat = nmea.getLatitude();
+        long lLon = nmea.getLongitude();
+        char cBuf[20];
+        snprintf (cBuf, sizeof(cBuf), "%f", lLat);
+        sURL+="?lat=";
+        sURL+=cBuf;
+      
+        snprintf (cBuf, sizeof(cBuf), "%f", lLon);
+        sURL+="&lon=";
+        sURL+=cBuf;
+      }
+      
+      Serial.println(sURL);
+    
+      if (https.begin(*client, sURL)) {
         https.addHeader("Content-Type", "application/json");
         int httpCode = https.POST(sJSONStations);
         if (httpCode > 0) {
@@ -102,7 +153,7 @@ void loop()
   
     delete client;
   }
-    
+
   // Wait a bit before scanning again
   delay(50000);
 }
