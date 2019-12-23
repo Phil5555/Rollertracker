@@ -9,6 +9,7 @@
 #include <HTTPClient.h>
 #include <MicroNMEA.h>
 #include "config.h"
+#include "LEDController.h"
 
 CachedScan scan;
 
@@ -63,6 +64,7 @@ void processGPSData(void *) {
 void setup()
 {
   Serial.begin(115200);
+  Serial.println("Setting up GPS");
   gps.begin(9600); // gps
   // Clear the list of messages which are sent.
   MicroNMEA::sendSentence(gps, "$PORZB");
@@ -82,8 +84,9 @@ void setup()
                            1,                /* Priority of the task. */
                            NULL,             /* Task handle. */
                            1);               /*core id*/
-
-  Serial.println("Setup done");
+  Serial.println("Activating LEDs");
+  setupLEDController();
+  Serial.println("Setup complete");
 }
 
 void loop()
