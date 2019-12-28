@@ -1,5 +1,6 @@
 #include "freertos/FreeRTOS.h"
 #include "driver/pcnt.h"
+#include "LocationStatus.h"
 #include <FastLED.h>
 
 #define SPEED_SENSOR_PIN    4
@@ -137,12 +138,30 @@ void setupLEDController() {
 
 void renderLEDsParked() {
   int i=0;
-  if(millis()/1000%60) {
+  switch(locationStatus) {
+    case SCANNING:
+      leds[0]=CRGB::White;
+      break;
+    case CONNECT:
       leds[0]=CRGB::Blue;
       leds[0].fadeLightBy(250);
-    } else {
-      leds[0]=CRGB::White;
-    }
+      break;
+    case REQUESTING:
+      leds[0]=CRGB::Yellow;
+      leds[0].fadeLightBy(230);
+      break;
+    case UPDATING:
+      leds[0]=CRGB::Red;
+      break;
+    case UPDATED:
+      leds[0]=CRGB::Red;
+      leds[0].fadeLightBy(210);
+      break;
+    case INVALID:
+    default:
+      leds[0]=CRGB::Green;
+      leds[0].fadeLightBy(210);
+  }
 
     /*Background pattern*/
     for(i = 0; i < LEDS_PER_SIDE; i++) {

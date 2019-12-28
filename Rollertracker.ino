@@ -1,4 +1,4 @@
-/*
+/*0
  *  This sketch demonstrates how to scan WiFi networks.
  *  The API is almost the same as with the WiFi Shield library,
  *  the most obvious difference being the different file you need to include:
@@ -9,7 +9,9 @@
 #include <HTTPClient.h>
 #include <MicroNMEA.h>
 #include "config.h"
+#include "LocationStatus.h"
 #include "LEDController.h"
+#include "ArduinoJson.h"
 
 CachedScan scan;
 
@@ -49,8 +51,11 @@ const char* rootCACertificate = \
 
 HardwareSerial& gps = Serial2;
 char nmeaBuffer[512];
+StaticJsonDocument<2048> jsonDoc;
 MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
-
+LocationStatus locationStatus;
+unsigned long uLastUpdate;
+ 
 void processGPSData(void *) {
   while(true) {
     while (gps.available()) {
@@ -63,6 +68,9 @@ void processGPSData(void *) {
 
 void setup()
 {
+  locationStatus=INVALID;
+  uLastUpdate=0;
+  
   Serial.begin(115200);
   Serial.println("Setting up GPS");
   gps.begin(9600); // gps
@@ -84,6 +92,7 @@ void setup()
                            1,                /* Priority of the task. */
                            NULL,             /* Task handle. */
                            1);               /*core id*/
+
   Serial.println("Activating LEDs");
   setupLEDController();
   Serial.println("Setup complete");
@@ -94,11 +103,13 @@ void loop()
   String sJSONStations;
   int i=0;
   Serial.println("Starting a new scan");
+  locationStatus=SCANNING;
   scan.scanAndCache();
   sJSONStations=scan.serializeToJSON();
   Serial.println(sJSONStations);
 
   Serial.print("Waiting for WiFi to connect again ...");
+  locationStatus=CONNECT;
   scan.connectToSomeStation(30);
   Serial.println("done");
 
@@ -107,11 +118,12 @@ void loop()
     delay(1000);
     return;
   }
-  
+
   Serial.print("WiFi connected, IP address: ");
   Serial.println(WiFi.localIP());
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-  
+
+  locationStatus=REQUESTING;
   WiFiClientSecure *client = new WiFiClientSecure;
   if(client) {
     client -> setCACert(rootCACertificate);
@@ -133,7 +145,6 @@ void loop()
       }
       
       Serial.println(sURL);
-    
       if (https.begin(*client, sURL)) {
         https.addHeader("Content-Type", "application/json");
         int httpCode = https.POST(sJSONStations);
@@ -142,6 +153,38 @@ void loop()
           if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
             String payload = https.getString();
             Serial.println(payload);
+
+            /*Parse answer:*/
+            auto jsonError = deserializeJson(jsonDoc, payload.c_str());
+            if(!jsonError) {
+              const char * cLocId = jsonDoc["location"]["id"];
+              Serial.print("Location Id: ");
+              Serial.println(cLocId);
+              if(strlen(cLocId)) {
+                locationStatus=UPDATING;
+                Serial.println("Constructing location update request");
+                DynamicJsonDocument jsonRequest(3);
+                jsonRequest["coordinates_id"] = cLocId;
+                jsonRequest["secret"] = POSITION_SECRET;
+                String sReq;
+                serializeJson(jsonRequest, sReq);
+                Serial.println(sReq.c_str());
+
+                HTTPClient httpsReq;
+                String sURLReq=POSITION_URL;
+                Serial.print("Starting httpsReq client ...");
+                if (httpsReq.begin(*client, sURLReq)) {
+                  Serial.println(" ok");
+                  httpsReq.addHeader("Content-Type", "application/json");
+                  Serial.print("Requesting update ... ");
+                  httpCode = httpsReq.PUT(sReq);
+                  Serial.println(httpCode);
+                  uLastUpdate=millis();
+                } else {
+                  Serial.println(" failed");
+                }
+              }
+            }
           }
         } else {
           Serial.printf("[HTTPS] POST... failed, error: %s\n", https.errorToString(httpCode).c_str());
@@ -150,13 +193,18 @@ void loop()
       } else {
         Serial.printf("[HTTPS] Unable to connect\n");
       }
-
-      // End extra scoping block
     }
   
     delete client;
   }
 
+  if(uLastUpdate==0 ||
+     uLastUpdate+POSITION_CONSIDERED_INVALID_MS < millis()) {
+    locationStatus=INVALID;
+  } else {
+    locationStatus=UPDATED;
+  }
+
   // Wait a bit before scanning again
-  delay(50000);
+  delay(60*1000);
 }

@@ -28,17 +28,21 @@ void CachedScan::connectToSomeStation(unsigned uTimeout) {
   #else
     WiFi.begin(PREFERED_WIFI_SSID);
   #endif
+  Serial.println("");
+  Serial.print("  ");
+  Serial.printf("%32s",PREFERED_WIFI_SSID);
+  Serial.print(" ");
   
   while(WiFi.status() != WL_CONNECTED ||
-        millis() < uTimeout) {
-    if(uLoopCount>50) {
-      uLoopCount=0;
+        millis() < uTimeout ) {
+    if(uLoopCount>30) {
+      uLoopCount=10;
       /*Use available, unencrypted networks if connection does not work.*/
       for(;uNetwork<_scanCount;++uNetwork) {
         if(WiFi.encryptionType(uNetwork)==WIFI_AUTH_OPEN) {
            Serial.println("x");
            Serial.print("  ");
-           Serial.print(WiFi.SSID(uNetwork));
+           Serial.printf("%32s",WiFi.SSID(uNetwork).c_str());
            Serial.print(" ");
            WiFi.disconnect();
            WiFi.begin(WiFi.SSID(uNetwork).c_str());
@@ -46,9 +50,12 @@ void CachedScan::connectToSomeStation(unsigned uTimeout) {
            break;
         }
       }
+      if(uNetwork>=_scanCount) {
+        break; /*No more networks to try*/
+      }
     }
     ++uLoopCount;
-    delay(100);
+    delay(1000);
     Serial.print("."); 
   }
 }
