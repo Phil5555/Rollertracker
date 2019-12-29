@@ -51,7 +51,7 @@ const char* rootCACertificate = \
 
 HardwareSerial& gps = Serial2;
 char nmeaBuffer[512];
-StaticJsonDocument<2048> jsonDoc;
+DynamicJsonDocument jsonDoc(2048);
 MicroNMEA nmea(nmeaBuffer, sizeof(nmeaBuffer));
 LocationStatus locationStatus;
 unsigned long uLastUpdate;
@@ -163,7 +163,7 @@ void loop()
               if(strlen(cLocId)) {
                 locationStatus=UPDATING;
                 Serial.println("Constructing location update request");
-                DynamicJsonDocument jsonRequest(3);
+                DynamicJsonDocument jsonRequest(1024);
                 jsonRequest["coordinates_id"] = cLocId;
                 jsonRequest["secret"] = POSITION_SECRET;
                 String sReq;
@@ -178,7 +178,9 @@ void loop()
                   httpsReq.addHeader("Content-Type", "application/json");
                   Serial.print("Requesting update ... ");
                   httpCode = httpsReq.PUT(sReq);
-                  Serial.println(httpCode);
+                  if(httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY ) {
+                    Serial.println(httpCode);
+                  }
                   uLastUpdate=millis();
                 } else {
                   Serial.println(" failed");
