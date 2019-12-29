@@ -122,7 +122,7 @@ void setupLEDController() {
                            1,                /* Priority of the task. */
                            NULL,             /* Task handle. */
                            1);               /*core id*/
-  ledsLeft=leds+1;;
+  ledsLeft=leds+1;
   ledsRight=leds+1+LEDS_PER_SIDE;
   FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, LEDS_COUNT).setCorrection( TypicalLEDStrip );
   scsThis=PARKED;
@@ -227,10 +227,12 @@ void renderLEDController(void *) {
   while(true) {
     if(scsThis==PARKED) {
       renderLEDsParked();
+      delay(1000);
     } else {
       renderLEDsMoving();
+      delay(10);
     }
     FastLED.show();
-    delay(50);
+    
   }
 }
